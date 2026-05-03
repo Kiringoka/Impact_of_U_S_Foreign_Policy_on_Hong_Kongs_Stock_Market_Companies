@@ -744,3 +744,222 @@ t6_h3 <- data.frame(
 make_table(t6_h3,
            "Figure 10. Hypothesis 3: trend test for cumulative policy impact",
            "WLS trend of year-by-year coefficients on year. Sign test: P(7 negative | H0) = 0.5^7 = 0.008.")
+
+
+# ============================================================================
+# ECONOMETRIC TABLES
+# ============================================================================
+
+# ============================================================================
+# figure 17. Pooled DiD Estimates (Main Results)
+# ============================================================================
+
+# Sector × Year FE pooled on monthly data
+m_att_sfe <- feols(log_vol ~ i(treated, post, ref = 0) |
+                     company + interaction(sector, month_fct),
+                   data = df_vol, cluster = ~company)
+att_sfe <- tidy(m_att_sfe) %>% filter(grepl("treated::1", term))
+
+t4 <- data.frame(
+  ` ` = c("Treated × Post", "", "",
+          "Treated × Post × loc_China", "", "",
+          "Treated × Post × is_financial", "", "",
+          "", "Firm FE", "Month FE", "Sector × Month FE",
+          "Observations", "Treated firms", "Control firms"),
+  `(1) Baseline` = c(
+    sprintf("%.4f", att$estimate),
+    sprintf("(%.4f)", att$std.error),
+    sprintf("[p=%.3f]", att$p.value),
+    "", "", "", "", "", "",
+    "", "Yes", "Yes", "No",
+    as.character(nrow(df_vol)), "46", "74"),
+  `(2) H1 Location` = c(
+    sprintf("%.4f", att$estimate),
+    sprintf("(%.4f)", att$std.error),
+    sprintf("[p=%.3f]", att$p.value),
+    sprintf("%.4f**", h1_pool$estimate),
+    sprintf("(%.4f)", h1_pool$std.error),
+    sprintf("[p=%.3f]", h1_pool$p.value),
+    "", "", "",
+    "", "Yes", "Yes", "No",
+    as.character(nrow(df_vol)), "46", "74"),
+  `(3) H2 Financial` = c(
+    sprintf("%.4f", att$estimate),
+    sprintf("(%.4f)", att$std.error),
+    sprintf("[p=%.3f]", att$p.value),
+    "", "", "",
+    sprintf("%.4f", h2_pool$estimate),
+    sprintf("(%.4f)", h2_pool$std.error),
+    sprintf("[p=%.3f]", h2_pool$p.value),
+    "", "Yes", "Yes", "No",
+    as.character(nrow(df_vol)), "46", "74"),
+  `(4) Sector×Year FE` = c(
+    sprintf("%.4f", att_sfe$estimate),
+    sprintf("(%.4f)", att_sfe$std.error),
+    sprintf("[p=%.3f]", att_sfe$p.value),
+    "", "", "", "", "", "",
+    "", "Yes", "No", "Yes",
+    as.character(nrow(df_vol)), "46", "74"),
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+
+make_table(t4,
+           "Figure 17. Difference-in-Differences Estimates: Pooled Treatment Effects",
+           "Dep. var.: log winsorized monthly trading volume. SE clustered at firm level in parentheses. ** p<0.05, * p<0.1.")
+
+# ============================================================================
+# Figure 18. Year-by-Year Treatment Effects
+# ============================================================================
+
+t5_base <- get_effects(m_event) %>% filter(year >= 2017)
+t5_sfe_d <- get_effects(m_sfe) %>% filter(year >= 2017)
+
+# Build formatted table
+t5_rows <- lapply(2017:2025, function(y) {
+  b <- t5_base %>% filter(year == y)
+  s <- t5_sfe_d %>% filter(year == y)
+  h <- h1_coefs %>% filter(year == y)
+  
+  b_sig <- ifelse(y == 2018, "",
+                  ifelse(is.na(b$p.value), "",
+                         case_when(b$p.value < 0.01 ~ "***",
+                                   b$p.value < 0.05 ~ "**",
+                                   b$p.value < 0.10 ~ "*", TRUE ~ "")))
+  s_sig <- ifelse(y == 2018, "",
+                  ifelse(is.na(s$p.value), "",
+                         case_when(s$p.value < 0.01 ~ "***",
+                                   s$p.value < 0.05 ~ "**",
+                                   s$p.value < 0.10 ~ "*", TRUE ~ "")))
+  
+  data.frame(
+    Year = as.character(y),
+    `(1) Coef.` = ifelse(y == 2018, "ref.", sprintf("%.4f%s", b$estimate, b_sig)),
+    `(1) SE` = ifelse(y == 2018, "", sprintf("(%.4f)", b$std.error)),
+    `(2) Coef.` = ifelse(y == 2018, "ref.", sprintf("%.4f%s", s$estimate, s_sig)),
+    `(2) SE` = ifelse(y == 2018, "", sprintf("(%.4f)", s$std.error)),
+    `(3) H1 Int.` = ifelse(nrow(h) == 0, "",
+                           sprintf("%.4f%s", h$estimate, h$sig)),
+    `(3) SE` = ifelse(nrow(h) == 0, "",
+                      sprintf("(%.4f)", h$std.error)),
+    check.names = FALSE, stringsAsFactors = FALSE
+  )
+})
+
+t5_body <- do.call(rbind, t5_rows)
+
+# Add summary rows
+t5_summary <- data.frame(
+  Year = c("", "Firm FE", "Year FE", "Sector×Year FE",
+           "Observations", "Firms", "",
+           "H3 trend slope",
+           "Sign test (7/7 neg.)"),
+  `(1) Coef.` = c("", "Yes", "Yes", "No",
+                  as.character(nrow(df_yr)), "120", "",
+                  sprintf("%.4f (p=%.3f)", coef(lm_full)["year"],
+                          summary(lm_full)$coefficients["year","Pr(>|t|)"]),
+                  "p = 0.008"),
+  `(1) SE` = rep("", 9),
+  `(2) Coef.` = c("", "Yes", "No", "Yes",
+                  as.character(nrow(df_yr)), "120",
+                  "", "", ""),
+  `(2) SE` = rep("", 9),
+  `(3) H1 Int.` = c("", "Yes", "Yes", "No",
+                    as.character(nrow(df_yr)), "120",
+                    "", "", ""),
+  `(3) SE` = rep("", 9),
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+
+t5_final <- rbind(t5_body, t5_summary)
+t5_final[t5_final == ""] <- " "
+
+make_table(t5_final,
+           "Figure 18. Year-by-Year Treatment Effects on Log Annual Trading Volume",
+           "(1) Firm+year FE. (2) Firm+sector×year FE. (3) Triple interaction: year×treated×loc_China. Ref: 2018. *** p<0.01, ** p<0.05, * p<0.1.")
+
+# ============================================================================
+# Figure 19. Event-Specific DiD Estimates (H4) — Volume and Price
+# ============================================================================
+
+t6_data <- ev_results %>%
+  left_join(
+    ev_p %>% select(order, did_p = did, se_p = se, p_p = p, sig_p = sig),
+    by = "order"
+  ) %>%
+  transmute(
+    `#` = as.character(order),
+    Event = label,
+    `Vol. Coef.` = sprintf("%.4f%s", did, sig),
+    `Vol. SE` = sprintf("(%.4f)", se),
+    `Vol. p` = sprintf("%.3f", p),
+    `Price Coef.` = ifelse(is.na(did_p), "", sprintf("%.4f%s", did_p, sig_p)),
+    `Price SE` = ifelse(is.na(se_p), "", sprintf("(%.4f)", se_p)),
+    `Price p` = ifelse(is.na(p_p), "", sprintf("%.3f", p_p))
+  )
+
+# Add trend rows
+t6_trend <- data.frame(
+  `#` = "",
+  Event = "Weighted trend (delta)",
+  `Vol. Coef.` = sprintf("%.4f", coef(trend_ev)[2]),
+  `Vol. SE` = sprintf("(%.4f)", summary(trend_ev)$coefficients[2,2]),
+  `Vol. p` = sprintf("%.3f", summary(trend_ev)$coefficients[2,4]),
+  `Price Coef.` = sprintf("%.4f", coef(trend_p)[2]),
+  `Price SE` = sprintf("(%.4f)", summary(trend_p)$coefficients[2,2]),
+  `Price p` = sprintf("%.3f", summary(trend_p)$coefficients[2,4]),
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+
+t6_final <- rbind(t6_data, t6_trend)
+
+make_table(t6_final,
+           "Figure 19. Event-Specific Difference-in-Differences Estimates",
+           "±6 month window. Firm+month FE. Clustered SE. WLS trend: coefficients regressed on event order. *** p<0.01, ** p<0.05, * p<0.1.")
+
+# ============================================================================
+# Figure 20. Robustness Summary — Volume vs Price
+# ============================================================================
+
+t7 <- data.frame(
+  Hypothesis = c("Overall ATT",
+                 "H1: loc_China",
+                 "H2: is_financial",
+                 "H3: Year trend",
+                 "H4: Event trend"),
+  `Vol. Coef.` = sprintf("%+.4f", c(att$estimate, h1_pool$estimate,
+                                    h2_pool$estimate,
+                                    coef(lm_full)["year"],
+                                    coef(trend_ev)[2])),
+  `Vol. SE` = sprintf("(%.4f)", c(att$std.error, h1_pool$std.error,
+                                  h2_pool$std.error,
+                                  summary(lm_full)$coefficients["year","Std. Error"],
+                                  summary(trend_ev)$coefficients[2,2])),
+  `Vol. p` = sprintf("%.3f", c(att$p.value, h1_pool$p.value,
+                               h2_pool$p.value,
+                               summary(lm_full)$coefficients["year","Pr(>|t|)"],
+                               summary(trend_ev)$coefficients[2,4])),
+  `Price Coef.` = sprintf("%+.4f", c(p_att$estimate, p_h1$estimate,
+                                     p_h2$estimate,
+                                     sp["year","Estimate"],
+                                     coef(trend_p)[2])),
+  `Price SE` = sprintf("(%.4f)", c(p_att$std.error, p_h1$std.error,
+                                   p_h2$std.error,
+                                   sp["year","Std. Error"],
+                                   summary(trend_p)$coefficients[2,2])),
+  `Price p` = sprintf("%.3f", c(p_att$p.value, p_h1$p.value,
+                                p_h2$p.value,
+                                sp["year","Pr(>|t|)"],
+                                summary(trend_p)$coefficients[2,4])),
+  Result = c("Not sig.",
+             "** (vol.), * (price)",
+             "Not sig.",
+             "Not sig.",
+             "Not sig."),
+  check.names = FALSE, stringsAsFactors = FALSE
+)
+
+make_table(t7,
+           "Figure 20. Robustness: Comparison of Results Across Outcome Variables",
+           "Vol.=log winsorized monthly volume. Price=log monthly avg. price. Firm+month FE. Clustered SE. *** p<0.01, ** p<0.05, * p<0.1.")
+
+
